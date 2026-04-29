@@ -2,6 +2,7 @@
 
 import Image from 'next/image'
 import Link from 'next/link'
+import { Avatar } from '@/components/ui/Avatar'
 import { usePathname, useRouter } from 'next/navigation'
 import { useAuth } from '@/components/providers/AuthProvider'
 import { signOut } from '@/lib/firebase/auth'
@@ -78,12 +79,7 @@ export function Sidebar() {
             onMouseEnter={(e) => { if (pathname !== '/profile') e.currentTarget.style.backgroundColor = 'var(--color-surface-2)' }}
             onMouseLeave={(e) => { if (pathname !== '/profile') e.currentTarget.style.backgroundColor = '' }}
           >
-            <div className="relative flex h-7 w-7 flex-shrink-0 items-center justify-center rounded-full overflow-hidden text-xs font-bold" style={{ backgroundColor: 'var(--color-brand)', color: '#fff' }}>
-              {profile.avatarUrl
-                ? <Image src={profile.avatarUrl} alt={profile.name} fill className="object-cover" />
-                : profile.name.charAt(0).toUpperCase()
-              }
-            </div>
+            <Avatar name={profile.name} avatarUrl={profile.avatarUrl} size={28} />
             <div className="min-w-0">
               <p className="text-xs font-medium truncate" style={{ color: 'var(--color-text)' }}>{profile.name}</p>
               <p className="text-[10px] capitalize" style={{ color: 'var(--color-text-dim)' }}>{profile.role}</p>

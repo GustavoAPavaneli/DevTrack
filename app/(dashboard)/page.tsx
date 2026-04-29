@@ -7,6 +7,7 @@ import { StatusBadge } from '@/components/ui/Badge'
 import { getProjects, getWeeklyLogs, getAllProfiles } from '@/lib/firebase/db'
 import { getWeekRange, formatHours, getWeekLabel, isoWeekDates } from '@/lib/utils'
 import { useAuth } from '@/components/providers/AuthProvider'
+import { Avatar } from '@/components/ui/Avatar'
 import { type Profile, type Project, type TimeLogWithRelations } from '@/lib/types'
 
 export default function DashboardPage() {
@@ -77,7 +78,12 @@ export default function DashboardPage() {
                 )}
                 {hoursByDev.map(({ dev, total }) => (
                   <tr key={dev.id} style={{ borderBottom: '1px solid var(--color-border)' }}>
-                    <td className="py-2.5" style={{ color: 'var(--color-text)' }}>{dev.name}</td>
+                    <td className="py-2.5">
+                      <div className="flex items-center gap-2">
+                        <Avatar name={dev.name} avatarUrl={dev.avatarUrl} size={24} />
+                        <span style={{ color: 'var(--color-text)' }}>{dev.name}</span>
+                      </div>
+                    </td>
                     <td className="py-2.5 text-right font-mono font-semibold" style={{ color: 'var(--color-brand)' }}>{formatHours(total)}</td>
                   </tr>
                 ))}

@@ -3,6 +3,7 @@
 import { type WeeklyDevSummary } from '@/lib/types'
 import { ColorBadge } from '@/components/ui/Badge'
 import { Button } from '@/components/ui/Button'
+import { Avatar } from '@/components/ui/Avatar'
 import { formatHours, downloadCsv, formatDate } from '@/lib/utils'
 
 interface WeeklyReportProps {
@@ -43,9 +44,7 @@ export function WeeklyReport({ summaries, weekLabel }: WeeklyReportProps) {
         <div key={dev.userId} className="overflow-hidden rounded-xl" style={{ border: '1px solid var(--color-border)' }}>
           <div className="flex items-center justify-between px-5 py-3" style={{ backgroundColor: 'var(--color-surface-2)', borderBottom: '1px solid var(--color-border)' }}>
             <div className="flex items-center gap-3">
-              <div className="flex h-8 w-8 items-center justify-center rounded-full text-sm font-bold" style={{ backgroundColor: 'var(--color-brand)', color: '#fff' }}>
-                {dev.name.charAt(0).toUpperCase()}
-              </div>
+              <Avatar name={dev.name} avatarUrl={dev.avatarUrl} size={32} />
               <span className="font-medium" style={{ color: 'var(--color-text)' }}>{dev.name}</span>
             </div>
             <span className="font-mono font-semibold" style={{ color: 'var(--color-brand)' }}>{formatHours(dev.totalHours)}</span>

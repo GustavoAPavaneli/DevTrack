@@ -94,7 +94,7 @@ async function enrichLogs(logs: TimeLog[]): Promise<TimeLogWithRelations[]> {
   const projectMap = Object.fromEntries(projects.map((p) => [p.id, p]))
   return logs.map((log) => ({
     ...log,
-    profiles: { id: log.userId, name: profileMap[log.userId]?.name ?? 'Desconhecido' },
+    profiles: { id: log.userId, name: profileMap[log.userId]?.name ?? 'Desconhecido', avatarUrl: profileMap[log.userId]?.avatarUrl },
     projects: {
       id: log.projectId,
       name: projectMap[log.projectId]?.name ?? 'Projeto removido',

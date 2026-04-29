@@ -1,10 +1,10 @@
 'use client'
 
 import { useRef, useState } from 'react'
-import Image from 'next/image'
 import { Topbar } from '@/components/layout/Topbar'
 import { Card } from '@/components/ui/Card'
 import { Button } from '@/components/ui/Button'
+import { Avatar } from '@/components/ui/Avatar'
 import { AvatarCropModal } from '@/components/profile/AvatarCropModal'
 import { useAuth } from '@/components/providers/AuthProvider'
 import { updateUserProfile } from '@/lib/firebase/db'
@@ -112,15 +112,11 @@ export default function ProfilePage() {
                 <button
                   onClick={() => fileInputRef.current?.click()}
                   disabled={uploading}
-                  className="group relative flex h-16 w-16 items-center justify-center rounded-full overflow-hidden"
-                  style={{ backgroundColor: 'var(--color-brand)' }}
+                  className="group relative flex rounded-full overflow-hidden"
+                  style={{ width: 64, height: 64 }}
                   title="Clique para trocar a foto"
                 >
-                  {avatarUrl ? (
-                    <Image src={avatarUrl} alt="Avatar" fill className="object-cover" />
-                  ) : (
-                    <span className="text-xl font-bold" style={{ color: '#fff' }}>{initials}</span>
-                  )}
+                  <Avatar name={profile?.name ?? initials} avatarUrl={avatarUrl} size={64} />
                   <span
                     className="absolute inset-0 flex items-center justify-center rounded-full opacity-0 group-hover:opacity-100 transition-opacity"
                     style={{ backgroundColor: 'rgba(0,0,0,0.52)' }}

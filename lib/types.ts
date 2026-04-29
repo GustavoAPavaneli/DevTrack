@@ -30,13 +30,14 @@ export interface TimeLog {
 }
 
 export interface TimeLogWithRelations extends TimeLog {
-  profiles: { id: string; name: string }
+  profiles: { id: string; name: string; avatarUrl?: string }
   projects: { id: string; name: string; color: string }
 }
 
 export interface WeeklyDevSummary {
   userId: string
   name: string
+  avatarUrl?: string
   totalHours: number
   logs: TimeLogWithRelations[]
 }

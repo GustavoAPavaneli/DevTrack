@@ -41,7 +41,7 @@ export function buildSummaries(logs: TimeLogWithRelations[]): WeeklyDevSummary[]
   const grouped: Record<string, WeeklyDevSummary> = {}
   for (const log of logs) {
     if (!grouped[log.userId]) {
-      grouped[log.userId] = { userId: log.userId, name: log.profiles.name, totalHours: 0, logs: [] }
+      grouped[log.userId] = { userId: log.userId, name: log.profiles.name, avatarUrl: log.profiles.avatarUrl, totalHours: 0, logs: [] }
     }
     grouped[log.userId].totalHours += log.hours
     grouped[log.userId].logs.push(log)

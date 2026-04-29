@@ -6,6 +6,7 @@ import { ColorBadge } from '@/components/ui/Badge'
 import { getAllProfiles, getTimeLogs, getProjects } from '@/lib/firebase/db'
 import { getWeekRange, isoWeekDates, formatHours } from '@/lib/utils'
 import { useAuth } from '@/components/providers/AuthProvider'
+import { Avatar } from '@/components/ui/Avatar'
 import { type Profile, type Project, type TimeLogWithRelations } from '@/lib/types'
 
 interface DevStats {
@@ -94,8 +95,6 @@ export default function DevsPage() {
 }
 
 function DevCard({ profile, weeklyHours, totalHours, activeProjects, recentLogs }: Omit<DevStats, 'profile'> & { profile: Profile }) {
-  const initials = profile.name.split(' ').map((n) => n[0]).join('').toUpperCase().slice(0, 2)
-
   return (
     <div
       className="flex flex-col rounded-xl overflow-hidden"
@@ -103,12 +102,7 @@ function DevCard({ profile, weeklyHours, totalHours, activeProjects, recentLogs 
     >
       {/* Header */}
       <div className="flex items-center gap-3 p-5" style={{ borderBottom: '1px solid var(--color-border)' }}>
-        <div
-          className="flex h-10 w-10 flex-shrink-0 items-center justify-center rounded-full text-sm font-bold"
-          style={{ backgroundColor: 'var(--color-brand)', color: '#fff' }}
-        >
-          {initials}
-        </div>
+        <Avatar name={profile.name} avatarUrl={profile.avatarUrl} size={40} />
         <div className="min-w-0">
           <p className="font-semibold truncate" style={{ color: 'var(--color-text)' }}>{profile.name}</p>
           <p className="text-xs capitalize" style={{ color: 'var(--color-text-muted)' }}>{profile.role}</p>
