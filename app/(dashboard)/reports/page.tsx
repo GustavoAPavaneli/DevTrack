@@ -5,14 +5,17 @@ import { Topbar } from '@/components/layout/Topbar'
 import { ReportsClient } from './ReportsClient'
 import { getWeeklyLogs } from '@/lib/firebase/db'
 import { getWeekRange, getWeekLabel, isoWeekDates } from '@/lib/utils'
+import { useAuth } from '@/components/providers/AuthProvider'
 import { type TimeLogWithRelations, type WeeklyDevSummary } from '@/lib/types'
 
 export default function ReportsPage() {
+  const { user } = useAuth()
   const [summaries, setSummaries] = useState<WeeklyDevSummary[]>([])
   const [weekLabel, setWeekLabel] = useState('')
   const [loading, setLoading] = useState(true)
 
   useEffect(() => {
+    if (!user) return
     const { start } = getWeekRange()
     const dates = isoWeekDates(start)
     setWeekLabel(getWeekLabel(start))
@@ -20,7 +23,7 @@ export default function ReportsPage() {
       setSummaries(buildSummaries(logs))
       setLoading(false)
     })
-  }, [])
+  }, [user])
 
   return (
     <div className="flex flex-col">

@@ -17,7 +17,7 @@ export async function signIn(email: string, password: string) {
       await createUserProfile(cred.user.uid, {
         name: email.split('@')[0],
         email,
-        role: 'dev',
+        role: 'admin',
       })
     }
   } catch (err) {
@@ -30,7 +30,7 @@ export async function signUp(name: string, email: string, password: string) {
   const cred = await createUserWithEmailAndPassword(auth, email, password)
   // Firestore write is best-effort — auth account is always created first
   try {
-    await createUserProfile(cred.user.uid, { name, email, role: 'dev' })
+    await createUserProfile(cred.user.uid, { name, email, role: 'admin' })
   } catch (err) {
     console.error('[DevTrack] Firestore profile write failed:', err)
   }

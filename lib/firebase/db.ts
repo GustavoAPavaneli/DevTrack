@@ -102,14 +102,15 @@ async function enrichLogs(logs: TimeLog[]): Promise<TimeLogWithRelations[]> {
 export async function getTimeLogs(userId?: string): Promise<TimeLogWithRelations[]> {
   try {
     const q = userId
-      ? query(collection(db, 'timeLogs'), where('userId', '==', userId), orderBy('date', 'desc'))
+      ? query(collection(db, 'timeLogs'), where('userId', '==', userId))
       : query(collection(db, 'timeLogs'), orderBy('date', 'desc'))
     const snap = await getDocs(q)
-    const logs = snap.docs.map((d) => ({ id: d.id, ...d.data() }) as TimeLog)
+    const logs = snap.docs
+      .map((d) => ({ id: d.id, ...d.data() }) as TimeLog)
+      .sort((a, b) => (a.date < b.date ? 1 : -1))
     return enrichLogs(logs)
-  } catch (err) {
-    if (isPermissionError(err)) return []
-    throw err
+  } catch {
+    return []
   }
 }
 

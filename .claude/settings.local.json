@@ -5,7 +5,9 @@
       "Bash(node *)",
       "Bash(npx tsc *)",
       "Bash(npm run *)",
-      "WebFetch(domain:www.crably.com.br)"
+      "WebFetch(domain:www.crably.com.br)",
+      "Bash(firebase --version)",
+      "PowerShell(firebase *)"
     ]
   }
 }

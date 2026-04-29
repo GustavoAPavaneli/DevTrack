@@ -15,12 +15,30 @@ export default function MyPanelPage() {
   const [loading, setLoading] = useState(true)
 
   useEffect(() => {
-    if (!user) return
-    Promise.all([getTimeLogs(user.uid), getProjects()]).then(([l, p]) => {
-      setLogs(l)
-      setProjects(p)
+    if (!user) {
       setLoading(false)
-    })
+      return
+    }
+
+    let mounted = true
+
+    async function load() {
+      try {
+        const [l, p] = await Promise.all([
+          getTimeLogs(user!.uid).catch(() => [] as TimeLogWithRelations[]),
+          getProjects().catch(() => [] as Project[]),
+        ])
+        if (mounted) {
+          setLogs(l)
+          setProjects(p)
+        }
+      } finally {
+        if (mounted) setLoading(false)
+      }
+    }
+
+    load()
+    return () => { mounted = false }
   }, [user])
 
   const { start } = getWeekRange()

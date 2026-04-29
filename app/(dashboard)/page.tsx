@@ -6,9 +6,11 @@ import { Card } from '@/components/ui/Card'
 import { StatusBadge } from '@/components/ui/Badge'
 import { getProjects, getWeeklyLogs, getAllProfiles } from '@/lib/firebase/db'
 import { getWeekRange, formatHours, getWeekLabel, isoWeekDates } from '@/lib/utils'
+import { useAuth } from '@/components/providers/AuthProvider'
 import { type Profile, type Project, type TimeLogWithRelations } from '@/lib/types'
 
 export default function DashboardPage() {
+  const { user } = useAuth()
   const [profiles, setProfiles] = useState<Profile[]>([])
   const [projects, setProjects] = useState<Project[]>([])
   const [weekLogs, setWeekLogs] = useState<TimeLogWithRelations[]>([])
@@ -18,19 +20,21 @@ export default function DashboardPage() {
   const dates = isoWeekDates(start)
 
   useEffect(() => {
+    if (!user) return
     Promise.all([
       getAllProfiles(),
       getProjects(),
       getWeeklyLogs(dates[0], dates[6]),
-    ]).then(([p, proj, logs]) => {
-      setProfiles(p)
-      setProjects(proj)
-      setWeekLogs(logs)
-      setLoading(false)
-    })
-  }, [])
+    ])
+      .then(([p, proj, logs]) => {
+        setProfiles(p)
+        setProjects(proj)
+        setWeekLogs(logs)
+      })
+      .finally(() => setLoading(false))
+  }, [user])
 
-  const devProfiles = profiles.filter((p) => p.role === 'dev')
+  const devProfiles = profiles
   const activeProjects = projects.filter((p) => p.status === 'active')
   const totalHours = weekLogs.reduce((sum, l) => sum + l.hours, 0)
   const hoursByDev = devProfiles.map((dev) => ({

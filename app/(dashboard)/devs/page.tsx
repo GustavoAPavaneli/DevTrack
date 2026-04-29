@@ -5,6 +5,7 @@ import { Topbar } from '@/components/layout/Topbar'
 import { ColorBadge } from '@/components/ui/Badge'
 import { getAllProfiles, getTimeLogs, getProjects } from '@/lib/firebase/db'
 import { getWeekRange, isoWeekDates, formatHours } from '@/lib/utils'
+import { useAuth } from '@/components/providers/AuthProvider'
 import { type Profile, type Project, type TimeLogWithRelations } from '@/lib/types'
 
 interface DevStats {
@@ -16,10 +17,12 @@ interface DevStats {
 }
 
 export default function DevsPage() {
+  const { user } = useAuth()
   const [devStats, setDevStats] = useState<DevStats[]>([])
   const [loading, setLoading] = useState(true)
 
   useEffect(() => {
+    if (!user) return
     async function load() {
       const [profiles, allLogs, projects] = await Promise.all([
         getAllProfiles(),
@@ -55,7 +58,7 @@ export default function DevsPage() {
       setLoading(false)
     }
     load()
-  }, [])
+  }, [user])
 
   return (
     <div className="flex flex-col">
