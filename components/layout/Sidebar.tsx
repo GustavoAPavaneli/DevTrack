@@ -68,15 +68,27 @@ export function Sidebar() {
       {/* User + logout */}
       <div className="p-3" style={{ borderTop: '1px solid var(--color-border)' }}>
         {profile && (
-          <div className="mb-1 flex items-center gap-2.5 rounded-lg px-3 py-2">
-            <div className="flex h-7 w-7 flex-shrink-0 items-center justify-center rounded-full text-xs font-bold" style={{ backgroundColor: 'var(--color-brand)', color: '#fff' }}>
-              {profile.name.charAt(0).toUpperCase()}
+          <Link
+            href="/profile"
+            className="mb-1 flex items-center gap-2.5 rounded-lg px-3 py-2 transition-colors"
+            style={pathname === '/profile'
+              ? { backgroundColor: 'var(--color-brand-muted)', borderLeft: '2px solid var(--color-brand)' }
+              : { borderLeft: '2px solid transparent' }
+            }
+            onMouseEnter={(e) => { if (pathname !== '/profile') e.currentTarget.style.backgroundColor = 'var(--color-surface-2)' }}
+            onMouseLeave={(e) => { if (pathname !== '/profile') e.currentTarget.style.backgroundColor = '' }}
+          >
+            <div className="relative flex h-7 w-7 flex-shrink-0 items-center justify-center rounded-full overflow-hidden text-xs font-bold" style={{ backgroundColor: 'var(--color-brand)', color: '#fff' }}>
+              {profile.avatarUrl
+                ? <Image src={profile.avatarUrl} alt={profile.name} fill className="object-cover" />
+                : profile.name.charAt(0).toUpperCase()
+              }
             </div>
             <div className="min-w-0">
               <p className="text-xs font-medium truncate" style={{ color: 'var(--color-text)' }}>{profile.name}</p>
               <p className="text-[10px] capitalize" style={{ color: 'var(--color-text-dim)' }}>{profile.role}</p>
             </div>
-          </div>
+          </Link>
         )}
         <button
           onClick={handleLogout}

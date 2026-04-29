@@ -21,7 +21,8 @@ export async function getUserProfile(uid: string): Promise<Profile | null> {
   try {
     const snap = await getDoc(doc(db, 'users', uid))
     if (!snap.exists()) return null
-    return { id: snap.id, ...snap.data() } as Profile
+    const data = snap.data()
+    return { id: snap.id, ...data, createdAt: toDate(data.createdAt) } as Profile
   } catch (err) {
     if (isPermissionError(err)) return null
     throw err
@@ -43,7 +44,10 @@ export async function updateUserProfile(uid: string, data: Partial<Profile>) {
 export async function getAllProfiles(): Promise<Profile[]> {
   try {
     const snap = await getDocs(collection(db, 'users'))
-    return snap.docs.map((d) => ({ id: d.id, ...d.data() }) as Profile)
+    return snap.docs.map((d) => {
+      const data = d.data()
+      return { id: d.id, ...data, createdAt: toDate(data.createdAt) } as Profile
+    })
   } catch (err) {
     if (isPermissionError(err)) return []
     throw err
