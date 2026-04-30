@@ -13,6 +13,7 @@ const navItems = [
   { href: '/projects', label: 'Projetos',        icon: 'projects'  },
   { href: '/logs',     label: 'Registrar Horas', icon: 'logs'      },
   { href: '/reports',  label: 'Relatórios',      icon: 'reports'   },
+  { href: '/kanban',   label: 'Kanban',          icon: 'kanban'    },
   { href: '/my',       label: 'Meu Painel',      icon: 'my'        },
 ]
 
@@ -108,6 +109,7 @@ function NavIcon({ name }: { name: string }) {
     projects: <svg className={cls} fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.75} d="M3 7v10a2 2 0 002 2h14a2 2 0 002-2V9a2 2 0 00-2-2h-6l-2-2H5a2 2 0 00-2 2z" /></svg>,
     logs: <svg className={cls} fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.75} d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" /></svg>,
     reports: <svg className={cls} fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.75} d="M9 17v-2m3 2v-4m3 4v-6m2 10H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" /></svg>,
+    kanban: <svg className={cls} fill="none" viewBox="0 0 24 24" stroke="currentColor"><rect x="3" y="3" width="5" height="13" rx="1.5" strokeWidth={1.75} strokeLinecap="round" strokeLinejoin="round" /><rect x="9.5" y="3" width="5" height="8" rx="1.5" strokeWidth={1.75} strokeLinecap="round" strokeLinejoin="round" /><rect x="16" y="3" width="5" height="11" rx="1.5" strokeWidth={1.75} strokeLinecap="round" strokeLinejoin="round" /></svg>,
     my: <svg className={cls} fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.75} d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z" /></svg>,
   }
   return icons[name] ?? null
