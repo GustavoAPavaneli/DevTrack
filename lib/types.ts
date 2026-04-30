@@ -41,3 +41,22 @@ export interface WeeklyDevSummary {
   totalHours: number
   logs: TimeLogWithRelations[]
 }
+
+export interface KanbanCard {
+  id: string
+  title: string
+  description?: string
+  tag?: string
+  priority?: 'low' | 'medium' | 'high'
+  columnId: string
+  order: number
+  createdAt: string
+}
+
+export interface KanbanColumn {
+  id: string
+  title: string
+  color: string
+  order: number
+  createdAt: string
+}

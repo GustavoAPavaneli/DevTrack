@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useRef, useCallback } from 'react'
+import { useState, useEffect, useRef, useMemo, useCallback } from 'react'
 import {
   DndContext,
   DragOverlay,
@@ -19,113 +19,94 @@ import {
   sortableKeyboardCoordinates,
   verticalListSortingStrategy,
   useSortable,
-  arrayMove,
 } from '@dnd-kit/sortable'
 import { CSS } from '@dnd-kit/utilities'
-
-// ─── Types ───────────────────────────────────────────────────────────────────
-
-interface KanbanCard {
-  id: string
-  title: string
-  description?: string
-  tag?: string
-  priority?: 'low' | 'medium' | 'high'
-}
-
-interface KanbanColumn {
-  id: string
-  title: string
-  color: string
-  cards: KanbanCard[]
-}
+import {
+  KANBAN_COLUMNS,
+  subscribeToKanbanCards,
+  subscribeToCustomColumns,
+  addKanbanCard,
+  deleteKanbanCard,
+  addKanbanColumn,
+  deleteKanbanColumn,
+  batchMoveCards,
+} from '@/lib/firebase/kanban'
+import { type KanbanCard, type KanbanColumn } from '@/lib/types'
 
 // ─── Constants ────────────────────────────────────────────────────────────────
 
-const INITIAL_COLUMNS: KanbanColumn[] = [
-  {
-    id: 'backlog',
-    title: 'Backlog',
-    color: '#555555',
-    cards: [
-      { id: 'c1', title: 'Pesquisa de UX', description: 'Entrevistar usuários e mapear fluxos', tag: 'Design', priority: 'low' },
-      { id: 'c2', title: 'Configurar CI/CD', description: 'Pipeline de deploy automatizado', tag: 'Infra', priority: 'medium' },
-      { id: 'c3', title: 'Documentar API', description: 'Swagger + exemplos de uso', tag: 'Docs', priority: 'low' },
-    ],
-  },
-  {
-    id: 'todo',
-    title: 'A Fazer',
-    color: '#888888',
-    cards: [
-      { id: 'c4', title: 'Implementar autenticação', description: 'OAuth2 com Google e GitHub', tag: 'Backend', priority: 'high' },
-      { id: 'c5', title: 'Design do dashboard', tag: 'Frontend', priority: 'medium' },
-    ],
-  },
-  {
-    id: 'in-progress',
-    title: 'Em Progresso',
-    color: '#F4511E',
-    cards: [
-      { id: 'c6', title: 'Refatorar módulo de logs', description: 'Melhorar performance das queries', tag: 'Backend', priority: 'high' },
-      { id: 'c7', title: 'Kanban board', description: 'Arrastar cards entre colunas', tag: 'Frontend', priority: 'high' },
-    ],
-  },
-  {
-    id: 'review',
-    title: 'Em Revisão',
-    color: '#f59e0b',
-    cards: [
-      { id: 'c8', title: 'Relatórios semanais', description: 'Code review pendente', tag: 'Frontend', priority: 'medium' },
-    ],
-  },
-  {
-    id: 'done',
-    title: 'Concluído',
-    color: '#22c55e',
-    cards: [
-      { id: 'c9', title: 'Setup inicial do projeto', tag: 'Infra', priority: 'low' },
-      { id: 'c10', title: 'Configurar Firebase', description: 'Auth + Firestore + Storage', tag: 'Backend', priority: 'medium' },
-    ],
-  },
-]
-
 const TAG_COLORS: Record<string, string> = {
-  Frontend:  '#3b82f6',
-  Backend:   '#8b5cf6',
-  Design:    '#ec4899',
-  Infra:     '#14b8a6',
-  Docs:      '#6b7280',
-  Geral:     '#F4511E',
+  Frontend: '#3b82f6',
+  Backend:  '#8b5cf6',
+  Design:   '#ec4899',
+  Infra:    '#14b8a6',
+  Docs:     '#6b7280',
+  Bug:      '#ef4444',
+  Geral:    '#F4511E',
 }
 
 const PRIORITY_COLORS = { low: '#555555', medium: '#f59e0b', high: '#ef4444' }
 const PRIORITY_LABELS = { low: 'Baixa', medium: 'Média', high: 'Alta' }
 
-const COLUMN_COLORS = ['#F4511E', '#3b82f6', '#8b5cf6', '#ec4899', '#14b8a6', '#22c55e', '#f59e0b', '#888888']
+const COLUMN_ID_SET: Set<string> = new Set(KANBAN_COLUMNS.map(c => c.id))
 
-let nextId = 100
-
-function uid() {
-  return `item-${++nextId}-${Math.random().toString(36).slice(2, 7)}`
-}
+const PICKER_COLORS = ['#F4511E', '#3b82f6', '#8b5cf6', '#ec4899', '#14b8a6', '#22c55e', '#f59e0b', '#888888', '#ef4444', '#06b6d4']
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
-function findColumnOfCard(cols: KanbanColumn[], cardId: string): KanbanColumn | undefined {
-  return cols.find(col => col.cards.some(c => c.id === cardId))
-}
+/**
+ * Applies a drag move to the flat cards array.
+ * Handles both within-column reorder and cross-column moves.
+ */
+function applyMove(cards: KanbanCard[], activeId: string, overId: string): KanbanCard[] {
+  const active = cards.find(c => c.id === activeId)
+  if (!active) return cards
 
-function findColumn(cols: KanbanColumn[], id: string): KanbanColumn | undefined {
-  const col = cols.find(c => c.id === id)
-  if (col) return col
-  return findColumnOfCard(cols, id)
+  const isOverCol = COLUMN_ID_SET.has(overId)
+  const targetColId = isOverCol
+    ? overId
+    : (cards.find(c => c.id === overId)?.columnId ?? active.columnId)
+
+  // Hovering the column header without crossing into a new position — skip
+  if (active.columnId === targetColId && isOverCol) return cards
+
+  // Cards in target column, sorted, excluding active
+  const targetOthers = cards
+    .filter(c => c.columnId === targetColId && c.id !== activeId)
+    .sort((a, b) => a.order - b.order)
+
+  const overIdx = isOverCol ? -1 : targetOthers.findIndex(c => c.id === overId)
+  const insertAt = overIdx >= 0 ? overIdx : targetOthers.length
+
+  const newTarget = [...targetOthers]
+  newTarget.splice(insertAt, 0, { ...active, columnId: targetColId })
+
+  const targetMap = new Map(newTarget.map((c, i) => [c.id, { ...c, order: i * 1000 }]))
+
+  const sourceMap = new Map<string, KanbanCard>()
+  if (active.columnId !== targetColId) {
+    cards
+      .filter(c => c.columnId === active.columnId && c.id !== activeId)
+      .sort((a, b) => a.order - b.order)
+      .forEach((c, i) => sourceMap.set(c.id, { ...c, order: i * 1000 }))
+  }
+
+  return cards.map(c => targetMap.get(c.id) ?? sourceMap.get(c.id) ?? c)
 }
 
 // ─── Card (sortable) ──────────────────────────────────────────────────────────
 
-function SortableCard({ card, isDragOverlay = false }: { card: KanbanCard; isDragOverlay?: boolean }) {
+function SortableCard({
+  card,
+  onDelete,
+  isDragOverlay = false,
+}: {
+  card: KanbanCard
+  onDelete?: (id: string) => void
+  isDragOverlay?: boolean
+}) {
   const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({ id: card.id })
+  const [hovered, setHovered] = useState(false)
 
   const style: React.CSSProperties = {
     transform: CSS.Transform.toString(transform),
@@ -135,33 +116,63 @@ function SortableCard({ card, isDragOverlay = false }: { card: KanbanCard; isDra
     rotate: isDragOverlay ? '2deg' : '0deg',
     scale: isDragOverlay ? '1.03' : '1',
     boxShadow: isDragOverlay
-      ? '0 20px 40px rgba(0,0,0,0.5), 0 0 0 1px rgba(244,81,30,0.3)'
+      ? '0 20px 40px rgba(0,0,0,0.6), 0 0 0 1px rgba(244,81,30,0.35)'
       : '0 1px 3px rgba(0,0,0,0.3)',
+    backgroundColor: 'var(--color-surface-2)',
+    border: hovered && !isDragOverlay
+      ? '1px solid var(--color-border-2)'
+      : '1px solid var(--color-border)',
+    borderRadius: 10,
+    padding: '10px 12px',
+    display: 'flex',
+    flexDirection: 'column',
+    gap: 6,
+    userSelect: 'none',
+    willChange: 'transform',
+    position: 'relative',
   }
 
-  const tagColor = card.tag ? (TAG_COLORS[card.tag] ?? '#555') : undefined
+  const tagColor = card.tag ? (TAG_COLORS[card.tag] ?? '#888') : undefined
 
   return (
     <div
       ref={setNodeRef}
-      style={{
-        ...style,
-        backgroundColor: 'var(--color-surface-2)',
-        border: '1px solid var(--color-border-2)',
-        borderRadius: 10,
-        padding: '10px 12px',
-        display: 'flex',
-        flexDirection: 'column',
-        gap: 6,
-        userSelect: 'none',
-        willChange: 'transform',
-      }}
+      style={style}
+      onMouseEnter={() => setHovered(true)}
+      onMouseLeave={() => setHovered(false)}
       {...attributes}
       {...listeners}
     >
-      {/* Top row: tag + priority */}
-      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 6 }}>
-        {card.tag && (
+      {/* Delete button */}
+      {onDelete && !isDragOverlay && (
+        <button
+          onPointerDown={e => e.stopPropagation()}
+          onClick={e => { e.stopPropagation(); onDelete(card.id) }}
+          style={{
+            position: 'absolute',
+            top: 6,
+            right: 6,
+            opacity: hovered ? 0.5 : 0,
+            transition: 'opacity 150ms ease',
+            background: 'none',
+            border: 'none',
+            cursor: 'pointer',
+            color: 'var(--color-text-dim)',
+            padding: '2px 4px',
+            borderRadius: 4,
+            fontSize: 13,
+            lineHeight: 1,
+          }}
+          onMouseEnter={e => { (e.currentTarget as HTMLButtonElement).style.opacity = '1'; (e.currentTarget as HTMLButtonElement).style.color = '#ef4444' }}
+          onMouseLeave={e => { (e.currentTarget as HTMLButtonElement).style.opacity = hovered ? '0.5' : '0'; (e.currentTarget as HTMLButtonElement).style.color = 'var(--color-text-dim)' }}
+        >
+          ×
+        </button>
+      )}
+
+      {/* Tag + priority */}
+      <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+        {card.tag && tagColor && (
           <span
             style={{
               fontSize: 10,
@@ -169,7 +180,7 @@ function SortableCard({ card, isDragOverlay = false }: { card: KanbanCard; isDra
               letterSpacing: '0.05em',
               textTransform: 'uppercase',
               color: tagColor,
-              backgroundColor: tagColor ? `${tagColor}22` : undefined,
+              backgroundColor: `${tagColor}22`,
               border: `1px solid ${tagColor}44`,
               borderRadius: 4,
               padding: '1px 6px',
@@ -186,12 +197,10 @@ function SortableCard({ card, isDragOverlay = false }: { card: KanbanCard; isDra
         )}
       </div>
 
-      {/* Title */}
-      <p style={{ fontSize: 13, fontWeight: 600, color: 'var(--color-text)', lineHeight: 1.35, margin: 0 }}>
+      <p style={{ fontSize: 13, fontWeight: 600, color: 'var(--color-text)', lineHeight: 1.35, margin: 0, paddingRight: 14 }}>
         {card.title}
       </p>
 
-      {/* Description */}
       {card.description && (
         <p style={{ fontSize: 11.5, color: 'var(--color-text-muted)', lineHeight: 1.4, margin: 0 }}>
           {card.description}
@@ -204,40 +213,53 @@ function SortableCard({ card, isDragOverlay = false }: { card: KanbanCard; isDra
 // ─── Column ───────────────────────────────────────────────────────────────────
 
 function KanbanColumnItem({
-  column,
+  id,
+  title,
+  color,
+  cards,
+  isCustom,
   onAddCard,
+  onDeleteCard,
   onDeleteColumn,
 }: {
-  column: KanbanColumn
+  id: string
+  title: string
+  color: string
+  cards: KanbanCard[]
+  isCustom: boolean
   onAddCard: (columnId: string, title: string) => void
-  onDeleteColumn: (columnId: string) => void
+  onDeleteCard: (id: string) => void
+  onDeleteColumn: (id: string) => void
 }) {
   const [adding, setAdding] = useState(false)
   const [newTitle, setNewTitle] = useState('')
-  const inputRef = useRef<HTMLInputElement>(null)
+  const [saving, setSaving] = useState(false)
   const [hovered, setHovered] = useState(false)
+  const inputRef = useRef<HTMLInputElement>(null)
 
-  const { setNodeRef, isOver } = useDroppable({ id: column.id })
+  const { setNodeRef, isOver } = useDroppable({ id })
 
-  function handleAddCard() {
-    if (newTitle.trim()) {
-      onAddCard(column.id, newTitle.trim())
+  async function handleConfirmAdd() {
+    if (!newTitle.trim() || saving) return
+    setSaving(true)
+    try {
+      await onAddCard(id, newTitle.trim())
+      setNewTitle('')
+      setAdding(false)
+    } finally {
+      setSaving(false)
     }
-    setNewTitle('')
-    setAdding(false)
   }
 
   function handleKeyDown(e: React.KeyboardEvent) {
-    if (e.key === 'Enter') handleAddCard()
+    if (e.key === 'Enter') handleConfirmAdd()
     if (e.key === 'Escape') { setAdding(false); setNewTitle('') }
   }
 
   function openAdding() {
     setAdding(true)
-    setTimeout(() => inputRef.current?.focus(), 50)
+    setTimeout(() => inputRef.current?.focus(), 40)
   }
-
-  const cardIds = column.cards.map(c => c.id)
 
   return (
     <div
@@ -246,74 +268,73 @@ function KanbanColumnItem({
         flexShrink: 0,
         display: 'flex',
         flexDirection: 'column',
-        gap: 0,
         borderRadius: 14,
         backgroundColor: 'var(--color-surface)',
-        border: `1px solid ${isOver ? column.color + '66' : 'var(--color-border)'}`,
-        boxShadow: isOver ? `0 0 0 2px ${column.color}33` : 'none',
+        border: `1px solid ${isOver ? color + '66' : 'var(--color-border)'}`,
+        boxShadow: isOver ? `0 0 0 2px ${color}33` : 'none',
         transition: 'border-color 150ms ease, box-shadow 150ms ease',
         overflow: 'hidden',
       }}
     >
-      {/* Column header */}
+      {/* Header */}
       <div
         style={{
           padding: '12px 14px 10px',
           borderBottom: '1px solid var(--color-border)',
           display: 'flex',
           alignItems: 'center',
-          justifyContent: 'space-between',
           gap: 8,
         }}
         onMouseEnter={() => setHovered(true)}
         onMouseLeave={() => setHovered(false)}
       >
-        <div style={{ display: 'flex', alignItems: 'center', gap: 8, minWidth: 0 }}>
-          <div style={{ width: 8, height: 8, borderRadius: '50%', backgroundColor: column.color, flexShrink: 0 }} />
-          <span style={{ fontSize: 13, fontWeight: 700, color: 'var(--color-text)', letterSpacing: '-0.01em', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-            {column.title}
-          </span>
-          <span
-            style={{
-              fontSize: 11,
-              fontWeight: 600,
-              color: column.color,
-              backgroundColor: `${column.color}22`,
-              border: `1px solid ${column.color}44`,
-              borderRadius: 20,
-              padding: '0px 7px',
-              minWidth: 20,
-              textAlign: 'center',
-            }}
-          >
-            {column.cards.length}
-          </span>
-        </div>
-
-        <button
-          onClick={() => onDeleteColumn(column.id)}
+        <div style={{ width: 8, height: 8, borderRadius: '50%', backgroundColor: color, flexShrink: 0 }} />
+        <span style={{ fontSize: 13, fontWeight: 700, color: 'var(--color-text)', letterSpacing: '-0.01em', flex: 1, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+          {title}
+        </span>
+        <span
           style={{
-            opacity: hovered ? 0.4 : 0,
-            transition: 'opacity 150ms ease',
-            background: 'none',
-            border: 'none',
-            cursor: 'pointer',
-            color: 'var(--color-text-dim)',
-            padding: '2px 4px',
-            borderRadius: 4,
-            fontSize: 14,
-            lineHeight: 1,
+            fontSize: 11,
+            fontWeight: 600,
+            color: color,
+            backgroundColor: `${color}22`,
+            border: `1px solid ${color}44`,
+            borderRadius: 20,
+            padding: '0 7px',
+            minWidth: 20,
+            textAlign: 'center',
+            flexShrink: 0,
           }}
-          onMouseEnter={e => { (e.currentTarget as HTMLButtonElement).style.opacity = '1'; (e.currentTarget as HTMLButtonElement).style.color = '#ef4444' }}
-          onMouseLeave={e => { (e.currentTarget as HTMLButtonElement).style.opacity = hovered ? '0.4' : '0'; (e.currentTarget as HTMLButtonElement).style.color = 'var(--color-text-dim)' }}
-          title="Remover coluna"
         >
-          ×
-        </button>
+          {cards.length}
+        </span>
+        {isCustom && (
+          <button
+            onClick={() => onDeleteColumn(id)}
+            style={{
+              opacity: hovered ? 0.45 : 0,
+              transition: 'opacity 150ms ease',
+              background: 'none',
+              border: 'none',
+              cursor: 'pointer',
+              color: 'var(--color-text-dim)',
+              padding: '2px 4px',
+              borderRadius: 4,
+              fontSize: 15,
+              lineHeight: 1,
+              flexShrink: 0,
+            }}
+            onMouseEnter={e => { (e.currentTarget as HTMLButtonElement).style.opacity = '1'; (e.currentTarget as HTMLButtonElement).style.color = '#ef4444' }}
+            onMouseLeave={e => { (e.currentTarget as HTMLButtonElement).style.opacity = hovered ? '0.45' : '0'; (e.currentTarget as HTMLButtonElement).style.color = 'var(--color-text-dim)' }}
+            title="Remover coluna"
+          >
+            ×
+          </button>
+        )}
       </div>
 
-      {/* Cards area */}
-      <SortableContext items={cardIds} strategy={verticalListSortingStrategy}>
+      {/* Cards */}
+      <SortableContext items={cards.map(c => c.id)} strategy={verticalListSortingStrategy}>
         <div
           ref={setNodeRef}
           style={{
@@ -321,22 +342,22 @@ function KanbanColumnItem({
             display: 'flex',
             flexDirection: 'column',
             gap: 8,
-            padding: '10px 10px',
+            padding: '10px',
             minHeight: 80,
+            backgroundColor: isOver ? `${color}08` : 'transparent',
             transition: 'background-color 150ms ease',
-            backgroundColor: isOver ? `${column.color}08` : 'transparent',
           }}
         >
-          {column.cards.map(card => (
-            <SortableCard key={card.id} card={card} />
+          {cards.map(card => (
+            <SortableCard key={card.id} card={card} onDelete={onDeleteCard} />
           ))}
 
-          {column.cards.length === 0 && !adding && (
+          {cards.length === 0 && !adding && (
             <div
               style={{
                 flex: 1,
-                minHeight: 60,
-                border: `2px dashed ${isOver ? column.color + '55' : 'var(--color-border)'}`,
+                minHeight: 56,
+                border: `2px dashed ${isOver ? color + '55' : 'var(--color-border)'}`,
                 borderRadius: 8,
                 display: 'flex',
                 alignItems: 'center',
@@ -360,40 +381,42 @@ function KanbanColumnItem({
               onChange={e => setNewTitle(e.target.value)}
               onKeyDown={handleKeyDown}
               placeholder="Título do card..."
+              disabled={saving}
               style={{
                 width: '100%',
                 padding: '8px 10px',
                 backgroundColor: 'var(--color-surface-3)',
-                border: `1px solid ${column.color}55`,
+                border: `1px solid ${color}55`,
                 borderRadius: 8,
                 color: 'var(--color-text)',
                 fontSize: 13,
                 outline: 'none',
-                boxShadow: `0 0 0 2px ${column.color}22`,
+                boxShadow: `0 0 0 2px ${color}22`,
               }}
             />
             <div style={{ display: 'flex', gap: 6 }}>
               <button
-                onClick={handleAddCard}
+                onClick={handleConfirmAdd}
+                disabled={saving || !newTitle.trim()}
                 style={{
                   flex: 1,
                   padding: '6px',
-                  backgroundColor: column.color,
+                  backgroundColor: color,
                   border: 'none',
                   borderRadius: 7,
                   color: '#fff',
                   fontSize: 12,
                   fontWeight: 600,
-                  cursor: 'pointer',
+                  cursor: saving ? 'wait' : 'pointer',
+                  opacity: saving || !newTitle.trim() ? 0.6 : 1,
                   transition: 'opacity 150ms',
                 }}
-                onMouseEnter={e => { (e.currentTarget as HTMLButtonElement).style.opacity = '0.85' }}
-                onMouseLeave={e => { (e.currentTarget as HTMLButtonElement).style.opacity = '1' }}
               >
-                Adicionar
+                {saving ? '...' : 'Adicionar'}
               </button>
               <button
                 onClick={() => { setAdding(false); setNewTitle('') }}
+                disabled={saving}
                 style={{
                   padding: '6px 10px',
                   backgroundColor: 'var(--color-surface-3)',
@@ -428,8 +451,8 @@ function KanbanColumnItem({
             }}
             onMouseEnter={e => {
               const b = e.currentTarget as HTMLButtonElement
-              b.style.borderColor = column.color
-              b.style.color = column.color
+              b.style.borderColor = color
+              b.style.color = color
             }}
             onMouseLeave={e => {
               const b = e.currentTarget as HTMLButtonElement
@@ -447,18 +470,23 @@ function KanbanColumnItem({
 
 // ─── Add Column Form ──────────────────────────────────────────────────────────
 
-function AddColumnForm({ onAdd }: { onAdd: (title: string, color: string) => void }) {
+function AddColumnForm({ onAdd }: { onAdd: (title: string, color: string) => Promise<void> }) {
   const [open, setOpen] = useState(false)
   const [title, setTitle] = useState('')
   const [colorIdx, setColorIdx] = useState(0)
+  const [saving, setSaving] = useState(false)
   const inputRef = useRef<HTMLInputElement>(null)
 
-  function handleAdd() {
-    if (title.trim()) {
-      onAdd(title.trim(), COLUMN_COLORS[colorIdx % COLUMN_COLORS.length])
+  async function handleAdd() {
+    if (!title.trim() || saving) return
+    setSaving(true)
+    try {
+      await onAdd(title.trim(), PICKER_COLORS[colorIdx % PICKER_COLORS.length])
+      setTitle('')
+      setOpen(false)
+    } finally {
+      setSaving(false)
     }
-    setTitle('')
-    setOpen(false)
   }
 
   function handleKeyDown(e: React.KeyboardEvent) {
@@ -468,7 +496,7 @@ function AddColumnForm({ onAdd }: { onAdd: (title: string, color: string) => voi
 
   function handleOpen() {
     setOpen(true)
-    setTimeout(() => inputRef.current?.focus(), 50)
+    setTimeout(() => inputRef.current?.focus(), 40)
   }
 
   if (!open) {
@@ -538,6 +566,7 @@ function AddColumnForm({ onAdd }: { onAdd: (title: string, color: string) => voi
         onChange={e => setTitle(e.target.value)}
         onKeyDown={handleKeyDown}
         placeholder="Nome da categoria..."
+        disabled={saving}
         style={{
           width: '100%',
           padding: '8px 10px',
@@ -553,7 +582,7 @@ function AddColumnForm({ onAdd }: { onAdd: (title: string, color: string) => voi
       <div>
         <p style={{ fontSize: 11, color: 'var(--color-text-dim)', marginBottom: 6 }}>Cor</p>
         <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6 }}>
-          {COLUMN_COLORS.map((c, i) => (
+          {PICKER_COLORS.map((c, i) => (
             <button
               key={c}
               onClick={() => setColorIdx(i)}
@@ -562,7 +591,7 @@ function AddColumnForm({ onAdd }: { onAdd: (title: string, color: string) => voi
                 height: 20,
                 borderRadius: '50%',
                 backgroundColor: c,
-                border: colorIdx === i ? `2px solid #fff` : '2px solid transparent',
+                border: colorIdx === i ? '2px solid #fff' : '2px solid transparent',
                 outline: colorIdx === i ? `2px solid ${c}` : 'none',
                 outlineOffset: 1,
                 cursor: 'pointer',
@@ -578,25 +607,26 @@ function AddColumnForm({ onAdd }: { onAdd: (title: string, color: string) => voi
       <div style={{ display: 'flex', gap: 6 }}>
         <button
           onClick={handleAdd}
+          disabled={saving || !title.trim()}
           style={{
             flex: 1,
             padding: '7px',
-            backgroundColor: COLUMN_COLORS[colorIdx % COLUMN_COLORS.length],
+            backgroundColor: PICKER_COLORS[colorIdx % PICKER_COLORS.length],
             border: 'none',
             borderRadius: 7,
             color: '#fff',
             fontSize: 12,
             fontWeight: 600,
-            cursor: 'pointer',
+            cursor: saving ? 'wait' : 'pointer',
+            opacity: saving || !title.trim() ? 0.6 : 1,
             transition: 'opacity 150ms',
           }}
-          onMouseEnter={e => { (e.currentTarget as HTMLButtonElement).style.opacity = '0.85' }}
-          onMouseLeave={e => { (e.currentTarget as HTMLButtonElement).style.opacity = '1' }}
         >
-          Criar
+          {saving ? '...' : 'Criar'}
         </button>
         <button
           onClick={() => { setOpen(false); setTitle('') }}
+          disabled={saving}
           style={{
             padding: '7px 12px',
             backgroundColor: 'var(--color-surface-3)',
@@ -614,11 +644,128 @@ function AddColumnForm({ onAdd }: { onAdd: (title: string, color: string) => voi
   )
 }
 
+// ─── Skeleton ─────────────────────────────────────────────────────────────────
+
+function BoardSkeleton() {
+  return (
+    <div style={{ display: 'flex', gap: 14, padding: '20px 24px', overflow: 'hidden' }}>
+      {KANBAN_COLUMNS.map(col => (
+        <div
+          key={col.id}
+          style={{
+            width: 272,
+            flexShrink: 0,
+            borderRadius: 14,
+            backgroundColor: 'var(--color-surface)',
+            border: '1px solid var(--color-border)',
+            overflow: 'hidden',
+          }}
+        >
+          <div style={{ padding: '12px 14px 10px', borderBottom: '1px solid var(--color-border)', display: 'flex', alignItems: 'center', gap: 8 }}>
+            <div style={{ width: 8, height: 8, borderRadius: '50%', backgroundColor: col.color, flexShrink: 0 }} />
+            <div style={{ height: 12, width: 80, borderRadius: 4, backgroundColor: 'var(--color-surface-3)' }} />
+          </div>
+          <div style={{ padding: 10, display: 'flex', flexDirection: 'column', gap: 8 }}>
+            {[1, 2].map(i => (
+              <div
+                key={i}
+                style={{
+                  height: 64,
+                  borderRadius: 10,
+                  backgroundColor: 'var(--color-surface-2)',
+                  border: '1px solid var(--color-border)',
+                  animation: 'pulse 1.5s ease-in-out infinite',
+                }}
+              />
+            ))}
+          </div>
+        </div>
+      ))}
+
+      <style>{`
+        @keyframes pulse {
+          0%, 100% { opacity: 1 }
+          50% { opacity: 0.4 }
+        }
+      `}</style>
+    </div>
+  )
+}
+
 // ─── Main Board ───────────────────────────────────────────────────────────────
 
 export function KanbanBoard() {
-  const [columns, setColumns] = useState<KanbanColumn[]>(INITIAL_COLUMNS)
+  const [cards, setCards] = useState<KanbanCard[]>([])
+  const [customColumns, setCustomColumns] = useState<KanbanColumn[]>([])
+  const [loading, setLoading] = useState(true)
+  const [error, setError] = useState<string | null>(null)
   const [activeCard, setActiveCard] = useState<KanbanCard | null>(null)
+
+  // Refs to access current state inside async callbacks without stale closures
+  const draggingRef = useRef(false)
+  const localCardsRef = useRef<KanbanCard[]>([])
+  const firestoreCardsRef = useRef<KanbanCard[]>([])
+
+  useEffect(() => { localCardsRef.current = cards }, [cards])
+
+  // Real-time Firestore subscriptions (cards + custom columns)
+  useEffect(() => {
+    let cardsReady = false
+    let colsReady = false
+
+    const unsubCards = subscribeToKanbanCards(
+      (fresh) => {
+        firestoreCardsRef.current = fresh
+        if (!draggingRef.current) setCards(fresh)
+        cardsReady = true
+        if (colsReady) setLoading(false)
+      },
+      (err) => {
+        console.error('Kanban cards sync error:', err)
+        setError('Não foi possível carregar o quadro. Recarregue a página.')
+        setLoading(false)
+      },
+    )
+
+    const unsubCols = subscribeToCustomColumns(
+      (fresh) => {
+        setCustomColumns(fresh)
+        colsReady = true
+        if (cardsReady) setLoading(false)
+      },
+      (err) => {
+        console.error('Kanban columns sync error:', err)
+        // Non-fatal — custom columns just won't load
+        colsReady = true
+        if (cardsReady) setLoading(false)
+      },
+    )
+
+    return () => { unsubCards(); unsubCols() }
+  }, [])
+
+  // All columns: fixed base + custom (from Firestore)
+  const allColumns = useMemo(() => {
+    const base = KANBAN_COLUMNS.map(c => ({ ...c, isCustom: false as const }))
+    const custom = customColumns.map(c => ({ ...c, isCustom: true as const }))
+    return [...base, ...custom]
+  }, [customColumns])
+
+  // Derived columns with their cards
+  const columns = useMemo(
+    () => allColumns.map(col => ({
+      ...col,
+      cards: cards.filter(c => c.columnId === col.id).sort((a, b) => a.order - b.order),
+    })),
+    [cards, allColumns],
+  )
+
+  // Keep COLUMN_ID_SET updated with custom column ids
+  useEffect(() => {
+    customColumns.forEach(c => COLUMN_ID_SET.add(c.id))
+  }, [customColumns])
+
+  const totalCards = cards.length
 
   const sensors = useSensors(
     useSensor(PointerSensor, { activationConstraint: { distance: 8 } }),
@@ -626,120 +773,136 @@ export function KanbanBoard() {
   )
 
   const handleDragStart = useCallback((event: DragStartEvent) => {
+    draggingRef.current = true
     const id = event.active.id as string
-    for (const col of columns) {
-      const card = col.cards.find(c => c.id === id)
-      if (card) { setActiveCard(card); return }
-    }
-  }, [columns])
+    setActiveCard(localCardsRef.current.find(c => c.id === id) ?? null)
+  }, [])
 
   const handleDragOver = useCallback((event: DragOverEvent) => {
     const { active, over } = event
-    if (!over) return
-
-    const activeId = active.id as string
-    const overId = over.id as string
-    if (activeId === overId) return
-
-    setColumns(prev => {
-      const activeCol = findColumnOfCard(prev, activeId)
-      const overCol = findColumn(prev, overId)
-      if (!activeCol || !overCol || activeCol.id === overCol.id) return prev
-
-      const card = activeCol.cards.find(c => c.id === activeId)!
-      const overCardIdx = overCol.cards.findIndex(c => c.id === overId)
-      const insertAt = overCardIdx >= 0 ? overCardIdx : overCol.cards.length
-
-      return prev.map(col => {
-        if (col.id === activeCol.id) {
-          return { ...col, cards: col.cards.filter(c => c.id !== activeId) }
-        }
-        if (col.id === overCol.id) {
-          const next = [...col.cards]
-          next.splice(insertAt, 0, card)
-          return { ...col, cards: next }
-        }
-        return col
-      })
-    })
+    if (!over || active.id === over.id) return
+    setCards(prev => applyMove(prev, active.id as string, over.id as string))
   }, [])
 
   const handleDragEnd = useCallback((event: DragEndEvent) => {
-    const { active, over } = event
+    const { over } = event
     setActiveCard(null)
-    if (!over) return
 
-    const activeId = active.id as string
-    const overId = over.id as string
-    if (activeId === overId) return
+    if (!over) {
+      // Dropped outside — revert
+      setCards(firestoreCardsRef.current)
+      draggingRef.current = false
+      return
+    }
 
-    setColumns(prev => {
-      const activeCol = findColumnOfCard(prev, activeId)
-      if (!activeCol) return prev
-      const overCol = findColumn(prev, overId)
-      if (!overCol || activeCol.id !== overCol.id) return prev
+    const finalCards = localCardsRef.current
+    const original = firestoreCardsRef.current
 
-      const oldIdx = activeCol.cards.findIndex(c => c.id === activeId)
-      const newIdx = activeCol.cards.findIndex(c => c.id === overId)
-      if (oldIdx === newIdx) return prev
+    // Compute which cards actually changed
+    const changed = finalCards.reduce<{ id: string; columnId: string; order: number }[]>(
+      (acc, card) => {
+        const prev = original.find(c => c.id === card.id)
+        if (!prev || prev.columnId !== card.columnId || prev.order !== card.order) {
+          acc.push({ id: card.id, columnId: card.columnId, order: card.order })
+        }
+        return acc
+      },
+      [],
+    )
 
-      return prev.map(col =>
-        col.id === activeCol.id
-          ? { ...col, cards: arrayMove(col.cards, oldIdx, newIdx) }
-          : col
-      )
-    })
+    if (changed.length === 0) {
+      draggingRef.current = false
+      return
+    }
+
+    // Persist to Firestore, keep drag lock until confirmed
+    batchMoveCards(changed)
+      .then(() => {
+        // Our write succeeded — update the Firestore reference
+        firestoreCardsRef.current = localCardsRef.current
+        draggingRef.current = false
+      })
+      .catch((err) => {
+        console.error('Failed to persist card move:', err)
+        // Revert to last known Firestore state on error
+        setCards(firestoreCardsRef.current)
+        draggingRef.current = false
+      })
   }, [])
 
-  const handleAddCard = useCallback((columnId: string, title: string) => {
-    setColumns(prev => prev.map(col =>
-      col.id === columnId
-        ? { ...col, cards: [...col.cards, { id: uid(), title }] }
-        : col
-    ))
+  const handleAddCard = useCallback(async (columnId: string, title: string) => {
+    const colCards = localCardsRef.current.filter(c => c.columnId === columnId)
+    const nextOrder = colCards.length === 0
+      ? 0
+      : Math.max(...colCards.map(c => c.order)) + 1000
+    await addKanbanCard({ title, columnId, order: nextOrder })
   }, [])
 
-  const handleAddColumn = useCallback((title: string, color: string) => {
-    setColumns(prev => [...prev, { id: uid(), title, color, cards: [] }])
+  const handleDeleteCard = useCallback(async (id: string) => {
+    await deleteKanbanCard(id).catch(console.error)
   }, [])
 
-  const handleDeleteColumn = useCallback((columnId: string) => {
-    setColumns(prev => prev.filter(c => c.id !== columnId))
+  const handleAddColumn = useCallback(async (title: string, color: string) => {
+    const nextOrder = customColumns.length === 0
+      ? 0
+      : Math.max(...customColumns.map(c => c.order)) + 1000
+    await addKanbanColumn({ title, color, order: nextOrder })
+  }, [customColumns])
+
+  const handleDeleteColumn = useCallback(async (id: string) => {
+    await deleteKanbanColumn(id).catch(console.error)
+    // Cards in this column stay — they'll show under an orphaned columnId
+    // (acceptable: user can drag them to another column)
   }, [])
 
-  const totalCards = columns.reduce((sum, c) => sum + c.cards.length, 0)
+  if (error) {
+    return (
+      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', height: '100%' }}>
+        <p style={{ color: 'var(--color-danger)', fontSize: 14 }}>{error}</p>
+      </div>
+    )
+  }
+
+  if (loading) {
+    return (
+      <div style={{ display: 'flex', flexDirection: 'column', height: '100%', overflow: 'hidden' }}>
+        <div style={{ padding: '12px 24px', borderBottom: '1px solid var(--color-border)', height: 44 }} />
+        <BoardSkeleton />
+      </div>
+    )
+  }
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', height: '100%', overflow: 'hidden' }}>
-      {/* Board stats bar */}
+      {/* Progress bar */}
       <div
         style={{
-          padding: '12px 24px',
+          padding: '0 24px',
+          height: 44,
           display: 'flex',
           alignItems: 'center',
-          gap: 20,
+          gap: 16,
           borderBottom: '1px solid var(--color-border)',
           flexShrink: 0,
         }}
       >
-        <div style={{ display: 'flex', gap: 4, alignItems: 'center' }}>
+        <div style={{ display: 'flex', flex: 1, gap: 3, alignItems: 'center', borderRadius: 99, overflow: 'hidden' }}>
           {columns.map(col => (
             <div
               key={col.id}
-              title={`${col.title}: ${col.cards.length} cards`}
+              title={`${col.title}: ${col.cards.length}`}
               style={{
                 height: 4,
-                flex: col.cards.length || 0.5,
+                flex: col.cards.length || 0.3,
                 backgroundColor: col.color,
-                borderRadius: 99,
-                transition: 'flex 400ms cubic-bezier(0.25, 1, 0.5, 1)',
-                opacity: 0.7,
+                opacity: 0.65,
+                transition: 'flex 450ms cubic-bezier(0.25, 1, 0.5, 1)',
               }}
             />
           ))}
         </div>
-        <span style={{ fontSize: 12, color: 'var(--color-text-dim)', flexShrink: 0 }}>
-          {totalCards} cards · {columns.length} categorias
+        <span style={{ fontSize: 12, color: 'var(--color-text-dim)', flexShrink: 0, fontVariantNumeric: 'tabular-nums' }}>
+          {totalCards} {totalCards === 1 ? 'card' : 'cards'}
         </span>
       </div>
 
@@ -765,8 +928,13 @@ export function KanbanBoard() {
           {columns.map(col => (
             <KanbanColumnItem
               key={col.id}
-              column={col}
+              id={col.id}
+              title={col.title}
+              color={col.color}
+              cards={col.cards}
+              isCustom={col.isCustom}
               onAddCard={handleAddCard}
+              onDeleteCard={handleDeleteCard}
               onDeleteColumn={handleDeleteColumn}
             />
           ))}
